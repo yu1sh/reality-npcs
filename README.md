@@ -1,0 +1,77 @@
+# Reality NPCs
+
+`reality-npcs` is a server-authoritative Forge 1.20.1 Mod for one fixed NPC
+template: the server-owned `guide`. It is an independent repository and does
+not depend on Claims, Parties, Economy, Identity, Permissions, or any other
+project Mod.
+
+## Fixed v1 contract
+
+- Java 17, Gradle 8.8, Forge 47.4.10, `mod_id=reality_npcs`, and package
+  `io.github.yu1sh.reality.npcs`.
+- Every guide has a generated stable ID, entity UUID, dimension, fixed spawn
+  anchor, and enabled state in the `reality_npcs` world `SavedData`.
+- A guide is a vanilla Villager configured as a non-combat, no-AI guide. Its
+  trade offers are empty, player interaction is cancelled with a chat notice,
+  and it has no custom UI, reward, inventory, combat, or owner permission.
+- Server enforcement runs every 20 ticks. A guide outside 16 blocks from its
+  saved anchor is returned to the nearest safe supported position within that
+  radius. Dimension travel is cancelled.
+- Active guides are limited to 32 per server and 16 per dimension. The limits
+  are checked before every spawn or recreate and disabled records do not count
+  as active guides.
+- Each accepted operator command attempt is rate-limited to one attempt per 30
+  seconds per player UUID or `console`. A failed spawn/recreate attempt also
+  consumes the interval. There is no override or emergency budget.
+- Player operators must have vanilla permission level 2 or higher. The only
+  non-player principal accepted is the server console; command blocks and
+  other sources fail closed.
+- Administrative operations are audited in append-only JSON Lines at
+  `logs/reality_npcs/audit.jsonl`. The log records timestamp, actor, action,
+  stable ID, world/dimension, reason, and result. The parent directories may be
+  created, no automatic deletion or rotation purge is implemented, and the
+  minimum retention requirement is 180 days.
+- On restart, records are restored from world `SavedData`. If an enabled guide
+  entity or its dimension is missing, the record is disabled and a `restore`
+  audit entry is written. A disabled record remains available for inspection
+  and `recreate`.
+- There is no world-reset special operation, direct data-editing path, manager
+  role, player request path, or Claims/Parties/Economy integration.
+
+## Commands
+
+Player operator:
+
+```text
+/realitynpcs spawn guide
+/realitynpcs list
+/realitynpcs disable <stable-id>
+/realitynpcs delete <stable-id>
+/realitynpcs recreate <stable-id>
+```
+
+The player command uses the player's current position and dimension as the
+anchor. Console spawn requires an explicit dimension and integer coordinates:
+
+```text
+/realitynpcs spawn guide <dimension> <x> <y> <z>
+```
+
+For example, `minecraft:overworld 0 64 0`. Console `list`, `disable`,
+`delete`, and `recreate` use the persisted record; no implicit cross-dimension
+movement is performed.
+
+## Build and validation
+
+```text
+./gradlew --version
+./gradlew clean compileJava
+```
+
+The implementation task intentionally does not include GameTest, broad test
+expansion, server smoke, or real-play validation. Real play has not been
+performed.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).
