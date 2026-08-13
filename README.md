@@ -44,6 +44,7 @@ Player operator:
 
 ```text
 /realitynpcs spawn guide
+/realitynpcs gui
 /realitynpcs list
 /realitynpcs disable <stable-id>
 /realitynpcs delete <stable-id>
@@ -60,6 +61,31 @@ anchor. Console spawn requires an explicit dimension and integer coordinates:
 For example, `minecraft:overworld 0 64 0`. Console `list`, `disable`,
 `delete`, and `recreate` use the persisted record; no implicit cross-dimension
 movement is performed.
+
+## Command / GUI parity
+
+`/realitynpcs gui` opens the server-owned administrator menu for an operator
+player. The menu receives an authoritative snapshot containing every persisted
+guide's stable ID, enabled state, dimension, anchor, entity UUID, entity
+presence, and SavedData revision. It provides the following equivalent
+operations:
+
+| Existing command | GUI list/detail operation | Server validation path |
+| --- | --- | --- |
+| `spawn guide` | Spawn guide | Current server player position/dimension, permission, session/request identity, revision, caps, rate limit, safe position, entity add, persistence, audit |
+| `list` | Snapshot / Refresh | Current server SavedData, permission, audit; no client-owned list state |
+| `disable <stable-id>` | Disable selected record | Server-resolved stable ID, current record state, permission, session/request identity, revision, dimension/entity lookup, persistence, audit |
+| `delete <stable-id>` | Delete selected record | Server-resolved stable ID, permission, session/request identity, revision, dimension/entity lookup, persistence, audit |
+| `recreate <stable-id>` | Recreate selected record | Server-resolved stable ID, current record state, permission, session/request identity, revision, caps, dimension/entity lookup, safe position, persistence, audit |
+
+GUI packets do not carry an authoritative actor, position, world/dimension,
+NPC state, or operation proof. The server obtains the actor from the network
+sender and resolves the current NPC record and player location before each
+operation. A server-issued menu session and strictly increasing request ID
+reject requests from another menu, duplicate/replayed requests, or
+out-of-order requests. The client revision is only a stale-snapshot hint; the
+server compares it with the current SavedData revision before any mutation.
+Commands remain available as the management and automation fallback.
 
 ## Build and validation
 

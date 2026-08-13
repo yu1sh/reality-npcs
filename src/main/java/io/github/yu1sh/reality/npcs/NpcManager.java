@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -25,13 +26,10 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.item.trading.MerchantOffers;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,7 +62,9 @@ final class NpcManager {
                                                 .then(Commands.argument("x", IntegerArgumentType.integer())
                                                         .then(Commands.argument("y", IntegerArgumentType.integer())
                                                                 .then(Commands.argument("z", IntegerArgumentType.integer())
-                                                                        .executes(NpcManager::spawnForConsole)))))))
+                                                                                .executes(NpcManager::spawnForConsole)))))))
+                        .then(Commands.literal("gui")
+                                .executes(NpcAdminController::openGui))
                         .then(Commands.literal("list")
                                 .executes(NpcManager::list))
                         .then(Commands.literal("disable")
@@ -183,6 +183,25 @@ final class NpcManager {
         return guide == null ? "unknown" : guide.stableId();
     }
 
+    static NpcAdminSnapshot snapshot(MinecraftServer server, long sessionId) {
+        GuideSavedData data = GuideSavedData.forServer(server);
+        List<NpcAdminSnapshot.Entry> entries = new ArrayList<>();
+        for (GuideSavedData.GuideRecord guide : data.sortedGuides()) {
+            ServerLevel level = findLevel(server, guide.dimension());
+            boolean entityPresent = level != null && findEntity(level, guide) != null;
+            entries.add(new NpcAdminSnapshot.Entry(
+                    guide.stableId(),
+                    guide.enabled(),
+                    guide.dimension(),
+                    guide.anchor().getX(),
+                    guide.anchor().getY(),
+                    guide.anchor().getZ(),
+                    guide.entityUuid().toString(),
+                    entityPresent));
+        }
+        return new NpcAdminSnapshot(sessionId, data.revision(), entries);
+    }
+
     private static int spawnForPlayer(CommandContext<CommandSourceStack> context) {
         CommandSourceStack source = context.getSource();
         String dimension = dimensionOf(source.getLevel());
@@ -192,7 +211,14 @@ final class NpcManager {
         if (!(source.getEntity() instanceof ServerPlayer player)) {
             return reject(context, "spawn", null, dimension, "player_position_required");
         }
-        return spawn(context, player.serverLevel(), player.blockPosition(), "player_position");
+        GuideSavedData data = GuideSavedData.forServer(source.getServer());
+        OperationResult result = spawn(
+                source.getServer(),
+                data,
+                player.serverLevel(),
+                player.blockPosition(),
+                "player_position");
+        return complete(context, "spawn", result);
     }
 
     private static int spawnForConsole(CommandContext<CommandSourceStack> context) {
@@ -215,25 +241,34 @@ final class NpcManager {
                 IntegerArgumentType.getInteger(context, "x"),
                 IntegerArgumentType.getInteger(context, "y"),
                 IntegerArgumentType.getInteger(context, "z"));
-        return spawn(context, level, anchor, "console_coordinates");
+        GuideSavedData data = GuideSavedData.forServer(context.getSource().getServer());
+        OperationResult result = spawn(
+                context.getSource().getServer(),
+                data,
+                level,
+                anchor,
+                "console_coordinates");
+        return complete(context, "spawn", result);
     }
 
-    private static int spawn(
-            CommandContext<CommandSourceStack> context,
+    static OperationResult spawn(
+            MinecraftServer server,
+            GuideSavedData data,
             ServerLevel level,
             BlockPos anchor,
             String reason) {
-        MinecraftServer server = context.getSource().getServer();
-        GuideSavedData data = GuideSavedData.forServer(server);
         String dimension = dimensionOf(level);
+        if (level == null) {
+            return rejected(null, dimension, "dimension_missing");
+        }
         if (!level.isInWorldBounds(anchor)) {
-            return reject(context, "spawn", null, dimension, "anchor_out_of_world_bounds");
+            return rejected(null, dimension, "anchor_out_of_world_bounds");
         }
         if (activeCount(data, null) >= SERVER_CAP) {
-            return reject(context, "spawn", null, dimension, "server_cap_32");
+            return rejected(null, dimension, "server_cap_32");
         }
         if (activeCountInDimension(data, dimension, null) >= WORLD_DIMENSION_CAP) {
-            return reject(context, "spawn", null, dimension, "world_dimension_cap_16");
+            return rejected(null, dimension, "world_dimension_cap_16");
         }
 
         String stableId = "guide-" + UUID.randomUUID();
@@ -241,17 +276,19 @@ final class NpcManager {
                 stableId, UUID.randomUUID(), dimension, anchor, true);
         Villager villager = createGuide(level, guide);
         if (villager == null) {
-            return reject(context, "spawn", stableId, dimension, "no_safe_spawn_position");
+            return rejected(stableId, dimension, "no_safe_spawn_position");
         }
         if (!level.addFreshEntity(villager)) {
-            return reject(context, "spawn", stableId, dimension, "entity_add_rejected");
+            return rejected(stableId, dimension, "entity_add_rejected");
         }
 
         data.put(guide);
-        data.setDirty();
-        finish(context, "spawn", stableId, dimension, reason, "success");
-        sendSuccess(context, "guide_spawned id=" + stableId + " dimension=" + dimension);
-        return 1;
+        data.changed();
+        return succeeded(
+                stableId,
+                dimension,
+                reason,
+                "guide_spawned id=" + stableId + " dimension=" + dimension);
     }
 
     private static int list(CommandContext<CommandSourceStack> context) {
@@ -284,24 +321,15 @@ final class NpcManager {
         if (!begin(context, "disable", stableId, dimension)) {
             return 0;
         }
-        if (guide == null) {
-            return reject(context, "disable", stableId, dimension, "stable_id_missing");
-        }
-        if (!guide.enabled()) {
-            return reject(context, "disable", stableId, dimension, "already_disabled");
-        }
-
-        ServerLevel level = findLevel(context.getSource().getServer(), guide.dimension());
-        Entity entity = level == null ? null : findEntity(level, guide);
-        if (entity != null) {
-            entity.remove(Entity.RemovalReason.DISCARDED);
-        }
-        guide.setEnabled(false);
-        data.setDirty();
-        finish(context, "disable", stableId, guide.dimension(),
-                entity == null ? "entity_missing" : "operator_disable", "success");
-        sendSuccess(context, "guide_disabled id=" + stableId);
-        return 1;
+        return complete(
+                context,
+                "disable",
+                disable(
+                        context.getSource().getServer(),
+                        data,
+                        stableId,
+                        "operator_disable",
+                        dimension));
     }
 
     private static int delete(CommandContext<CommandSourceStack> context) {
@@ -312,21 +340,15 @@ final class NpcManager {
         if (!begin(context, "delete", stableId, dimension)) {
             return 0;
         }
-        if (guide == null) {
-            return reject(context, "delete", stableId, dimension, "stable_id_missing");
-        }
-
-        ServerLevel level = findLevel(context.getSource().getServer(), guide.dimension());
-        Entity entity = level == null ? null : findEntity(level, guide);
-        if (entity != null) {
-            entity.remove(Entity.RemovalReason.DISCARDED);
-        }
-        data.remove(stableId);
-        data.setDirty();
-        finish(context, "delete", stableId, guide.dimension(),
-                entity == null ? "entity_missing" : "operator_delete", "success");
-        sendSuccess(context, "guide_deleted id=" + stableId);
-        return 1;
+        return complete(
+                context,
+                "delete",
+                delete(
+                        context.getSource().getServer(),
+                        data,
+                        stableId,
+                        "operator_delete",
+                        dimension));
     }
 
     private static int recreate(CommandContext<CommandSourceStack> context) {
@@ -338,20 +360,89 @@ final class NpcManager {
         if (!begin(context, "recreate", stableId, dimension)) {
             return 0;
         }
+        return complete(
+                context,
+                "recreate",
+                recreate(server, data, stableId, "operator_recreate", dimension));
+    }
+
+    static OperationResult disable(
+            MinecraftServer server,
+            GuideSavedData data,
+            String stableId,
+            String successReason,
+            String missingDimension) {
+        GuideSavedData.GuideRecord guide = data.get(stableId);
+        String dimension = guide == null ? missingDimension : guide.dimension();
         if (guide == null) {
-            return reject(context, "recreate", stableId, dimension, "stable_id_missing");
+            return rejected(stableId, dimension, "stable_id_missing");
+        }
+        if (!guide.enabled()) {
+            return rejected(stableId, dimension, "already_disabled");
+        }
+
+        ServerLevel level = findLevel(server, guide.dimension());
+        Entity entity = level == null ? null : findEntity(level, guide);
+        if (entity != null) {
+            entity.remove(Entity.RemovalReason.DISCARDED);
+        }
+        guide.setEnabled(false);
+        data.changed();
+        return succeeded(
+                stableId,
+                guide.dimension(),
+                entity == null ? "entity_missing" : successReason,
+                "guide_disabled id=" + stableId);
+    }
+
+    static OperationResult delete(
+            MinecraftServer server,
+            GuideSavedData data,
+            String stableId,
+            String successReason,
+            String missingDimension) {
+        GuideSavedData.GuideRecord guide = data.get(stableId);
+        String dimension = guide == null ? missingDimension : guide.dimension();
+        if (guide == null) {
+            return rejected(stableId, dimension, "stable_id_missing");
+        }
+
+        ServerLevel level = findLevel(server, guide.dimension());
+        Entity entity = level == null ? null : findEntity(level, guide);
+        if (entity != null) {
+            entity.remove(Entity.RemovalReason.DISCARDED);
+        }
+        data.remove(stableId);
+        data.changed();
+        return succeeded(
+                stableId,
+                guide.dimension(),
+                entity == null ? "entity_missing" : successReason,
+                "guide_deleted id=" + stableId);
+    }
+
+    static OperationResult recreate(
+            MinecraftServer server,
+            GuideSavedData data,
+            String stableId,
+            String successReason,
+            String missingDimension) {
+        GuideSavedData.GuideRecord guide = data.get(stableId);
+        String dimension = guide == null ? missingDimension : guide.dimension();
+        if (guide == null) {
+            return rejected(stableId, dimension, "stable_id_missing");
         }
 
         ServerLevel level = findLevel(server, guide.dimension());
         if (level == null) {
-            return reject(context, "recreate", stableId, guide.dimension(), "dimension_missing");
+            return rejected(stableId, guide.dimension(), "dimension_missing");
         }
         if (!guide.enabled() && activeCount(data, null) >= SERVER_CAP) {
-            return reject(context, "recreate", stableId, guide.dimension(), "server_cap_32");
+            return rejected(stableId, guide.dimension(), "server_cap_32");
         }
         if (!guide.enabled()
                 && activeCountInDimension(data, guide.dimension(), null) >= WORLD_DIMENSION_CAP) {
-            return reject(context, "recreate", stableId, guide.dimension(), "world_dimension_cap_16");
+            return rejected(stableId, guide.dimension(), "world_dimension_cap_16");
         }
 
         Entity previous = guide.enabled() ? findEntity(level, guide) : null;
@@ -360,20 +451,42 @@ final class NpcManager {
         Villager replacement = createGuide(level, guide);
         if (replacement == null) {
             guide.setEntityUuid(previousUuid);
-            return reject(context, "recreate", stableId, guide.dimension(), "no_safe_spawn_position");
+            return rejected(stableId, guide.dimension(), "no_safe_spawn_position");
         }
         if (!level.addFreshEntity(replacement)) {
             guide.setEntityUuid(previousUuid);
-            return reject(context, "recreate", stableId, guide.dimension(), "entity_add_rejected");
+            return rejected(stableId, guide.dimension(), "entity_add_rejected");
         }
         if (previous != null) {
             previous.remove(Entity.RemovalReason.DISCARDED);
         }
         guide.setEnabled(true);
-        data.setDirty();
-        finish(context, "recreate", stableId, guide.dimension(), "operator_recreate", "success");
-        sendSuccess(context, "guide_recreated id=" + stableId + " entity_uuid=" + guide.entityUuid());
-        return 1;
+        data.changed();
+        return succeeded(
+                stableId,
+                guide.dimension(),
+                successReason,
+                "guide_recreated id=" + stableId + " entity_uuid=" + guide.entityUuid());
+    }
+
+    private static OperationResult succeeded(
+            String stableId,
+            String dimension,
+            String reason,
+            String message) {
+        return new OperationResult(true, stableId, dimension, reason, message);
+    }
+
+    static OperationResult rejected(String stableId, String dimension, String reason) {
+        return new OperationResult(false, stableId, dimension, reason, "");
+    }
+
+    record OperationResult(
+            boolean success,
+            String stableId,
+            String dimension,
+            String reason,
+            String message) {
     }
 
     private static boolean begin(
@@ -383,29 +496,125 @@ final class NpcManager {
             String dimension) {
         CommandSourceStack source = context.getSource();
         MinecraftServer server = source.getServer();
-        String actor = actor(source);
-        if (!authorized(source)) {
-            AuditLog.append(server, actor, action, stableId, dimension,
-                    "permission_level_2_or_console_required", "rejected");
-            source.sendFailure(Component.literal("only permission level 2+ players or the server console may use this command"));
+        return beginOperation(
+                server,
+                actor(source),
+                authorized(source),
+                action,
+                stableId,
+                dimension,
+                message -> source.sendFailure(Component.literal(message)));
+    }
+
+    static boolean beginGuiMutation(
+            ServerPlayer player,
+            String action,
+            String stableId,
+            String dimension) {
+        return beginOperation(
+                player.getServer(),
+                actor(player),
+                player.hasPermissions(2),
+                action,
+                stableId,
+                dimension,
+                message -> player.sendSystemMessage(Component.literal(message)));
+    }
+
+    static boolean beginGuiRead(
+            ServerPlayer player,
+            String action,
+            String stableId,
+            String dimension) {
+        MinecraftServer server = player.getServer();
+        String actor = actor(player);
+        if (!player.hasPermissions(2)) {
+            AuditLog.append(
+                    server,
+                    actor,
+                    action,
+                    stableId,
+                    dimension,
+                    "permission_level_2_or_console_required",
+                    "rejected");
+            player.sendSystemMessage(Component.literal(
+                    "only permission level 2+ players may use the reality-npcs GUI"));
+            return false;
+        }
+        if (!AuditLog.prepare(server)) {
+            player.sendSystemMessage(Component.literal(
+                    "reality-npcs audit log is unavailable; operation rejected"));
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean beginOperation(
+            MinecraftServer server,
+            String actor,
+            boolean authorized,
+            String action,
+            String stableId,
+            String dimension,
+            Consumer<String> failure) {
+        if (!authorized) {
+            AuditLog.append(
+                    server,
+                    actor,
+                    action,
+                    stableId,
+                    dimension,
+                    "permission_level_2_or_console_required",
+                    "rejected");
+            failure.accept(
+                    "only permission level 2+ players or the server console may use this command");
             return false;
         }
 
         int now = server.getTickCount();
         Integer nextAllowed = NEXT_ALLOWED_TICK.get(actor);
         if (nextAllowed != null && now < nextAllowed) {
-            AuditLog.append(server, actor, action, stableId, dimension,
-                    "operator_rate_limit_30_seconds", "rejected");
-            source.sendFailure(Component.literal("reality-npcs operator rate limit: try again later"));
+            AuditLog.append(
+                    server,
+                    actor,
+                    action,
+                    stableId,
+                    dimension,
+                    "operator_rate_limit_30_seconds",
+                    "rejected");
+            failure.accept("reality-npcs operator rate limit: try again later");
             return false;
         }
         NEXT_ALLOWED_TICK.put(actor, now + SPAWN_ATTEMPT_INTERVAL_TICKS);
 
         if (!AuditLog.prepare(server)) {
-            source.sendFailure(Component.literal("reality-npcs audit log is unavailable; operation rejected"));
+            failure.accept("reality-npcs audit log is unavailable; operation rejected");
             return false;
         }
         return true;
+    }
+
+    private static int complete(
+            CommandContext<CommandSourceStack> context,
+            String action,
+            OperationResult result) {
+        if (!result.success()) {
+            return reject(
+                    context,
+                    action,
+                    result.stableId(),
+                    result.dimension(),
+                    result.reason());
+        }
+        finish(
+                context,
+                action,
+                result.stableId(),
+                result.dimension(),
+                result.reason(),
+                "success");
+        sendSuccess(context, result.message());
+        return 1;
     }
 
     private static int reject(
@@ -419,7 +628,7 @@ final class NpcManager {
         return 0;
     }
 
-    private static void finish(
+    static void finish(
             CommandContext<CommandSourceStack> context,
             String action,
             String stableId,
@@ -434,6 +643,17 @@ final class NpcManager {
                 dimension,
                 reason,
                 result);
+    }
+
+    static void finish(
+            MinecraftServer server,
+            String actor,
+            String action,
+            String stableId,
+            String dimension,
+            String reason,
+            String result) {
+        AuditLog.append(server, actor, action, stableId, dimension, reason, result);
     }
 
     private static void sendSuccess(CommandContext<CommandSourceStack> context, String message) {
@@ -459,7 +679,11 @@ final class NpcManager {
         return "unsupported:" + source.getTextName();
     }
 
-    private static String dimensionOf(ServerLevel level) {
+    static String actor(ServerPlayer player) {
+        return player.getUUID().toString();
+    }
+
+    static String dimensionOf(ServerLevel level) {
         return level == null ? "unknown" : level.dimension().location().toString();
     }
 
@@ -605,7 +829,7 @@ final class NpcManager {
             return;
         }
         guide.setEnabled(false);
-        data.setDirty();
+        data.changed();
         AuditLog.append(
                 server,
                 "console",

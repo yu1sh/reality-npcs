@@ -13,14 +13,19 @@ import net.minecraftforge.event.entity.player.AttackEntityEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
+import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 
 @Mod(RealityNpcsMod.MOD_ID)
 public final class RealityNpcsMod {
     public static final String MOD_ID = "reality_npcs";
 
     public RealityNpcsMod() {
+        IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
+        NpcMenus.register(modEventBus);
+        NpcNetwork.register();
         MinecraftForge.EVENT_BUS.register(this);
     }
 

@@ -19,6 +19,7 @@ final class GuideSavedData extends SavedData {
     private static final String GUIDES_TAG = "guides";
 
     private final Map<String, GuideRecord> guides = new HashMap<>();
+    private long revision;
 
     private GuideSavedData() {
     }
@@ -29,6 +30,7 @@ final class GuideSavedData extends SavedData {
 
     static GuideSavedData load(CompoundTag tag) {
         GuideSavedData data = new GuideSavedData();
+        data.revision = Math.max(0L, tag.getLong("revision"));
         ListTag guideTags = tag.getList(GUIDES_TAG, Tag.TAG_COMPOUND);
         for (int index = 0; index < guideTags.size(); index++) {
             CompoundTag guideTag = guideTags.getCompound(index);
@@ -78,7 +80,19 @@ final class GuideSavedData extends SavedData {
             guideTags.add(guideTag);
         }
         tag.put(GUIDES_TAG, guideTags);
+        tag.putLong("revision", revision);
         return tag;
+    }
+
+    long revision() {
+        return revision;
+    }
+
+    void changed() {
+        if (revision < Long.MAX_VALUE) {
+            revision++;
+        }
+        setDirty();
     }
 
     GuideRecord get(String stableId) {
