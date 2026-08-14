@@ -164,6 +164,80 @@ final class NpcAdminController {
         sendSnapshot(player, sessionId);
     }
 
+    static void handleGuideTextRequest(
+            ServerPlayer player,
+            long sessionId,
+            long requestId,
+            long snapshotRevision,
+            String stableId,
+            String guideText) {
+        if (!(player.containerMenu instanceof NpcAdminMenu menu)
+                || menu.sessionId() != sessionId) {
+            return;
+        }
+        if (!menu.acceptRequestId(requestId)) {
+            rejectRequest(player, "set_guide_text", stableId, "request_replay_or_out_of_order");
+            sendSnapshot(player, sessionId);
+            return;
+        }
+
+        MinecraftServer server = player.getServer();
+        if (server == null) {
+            return;
+        }
+        String action = "set_guide_text";
+        String requestedStableId = stableId == null ? "" : stableId;
+        GuideSavedData data = GuideSavedData.forServer(server);
+        GuideSavedData.GuideRecord guide = data.get(requestedStableId);
+        String dimension = guide == null
+                ? NpcManager.dimensionOf(player.serverLevel())
+                : guide.dimension();
+        if (!NpcManager.beginGuiMutation(player, action, requestedStableId, dimension)) {
+            sendSnapshot(player, sessionId);
+            return;
+        }
+
+        if (!NpcManager.isStableId(requestedStableId)) {
+            completeRejected(player, sessionId, action, requestedStableId, dimension, "stable_id_invalid");
+            return;
+        }
+        String invalidText = NpcManager.guideTextInputReason(guideText);
+        if (invalidText != null) {
+            completeRejected(player, sessionId, action, requestedStableId, dimension, invalidText);
+            return;
+        }
+        if (snapshotRevision < 0L || snapshotRevision != data.revision()) {
+            completeRejected(
+                    player,
+                    sessionId,
+                    action,
+                    requestedStableId,
+                    dimension,
+                    "snapshot_revision_stale");
+            return;
+        }
+
+        NpcManager.OperationResult result = NpcManager.setGuideText(
+                data,
+                requestedStableId,
+                guideText,
+                "gui_set_guide_text",
+                dimension);
+        NpcManager.finish(
+                server,
+                NpcManager.actor(player),
+                action,
+                result.stableId(),
+                result.dimension(),
+                result.reason(),
+                result.success() ? "success" : "rejected");
+        player.sendSystemMessage(Component.literal(
+                result.success()
+                        ? result.message()
+                        : "reality-npcs operation rejected: " + result.reason()));
+        sendSnapshot(player, sessionId);
+    }
+
     private static void completeRejected(
             ServerPlayer player,
             long sessionId,
@@ -203,13 +277,25 @@ final class NpcAdminController {
             NpcAdminOperation operation,
             String stableId,
             String reason) {
+        rejectRequest(
+                player,
+                operation == null ? "gui_request" : actionOf(operation),
+                stableId,
+                reason);
+    }
+
+    private static void rejectRequest(
+            ServerPlayer player,
+            String action,
+            String stableId,
+            String reason) {
         MinecraftServer server = player.getServer();
         if (server != null) {
             AuditLog.prepare(server);
             AuditLog.append(
                     server,
                     NpcManager.actor(player),
-                    operation == null ? "gui_request" : actionOf(operation),
+                    action,
                     stableId == null || stableId.isEmpty() ? null : stableId,
                     NpcManager.dimensionOf(player.serverLevel()),
                     reason,

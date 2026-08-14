@@ -1,6 +1,7 @@
 package io.github.yu1sh.reality.npcs;
 
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
@@ -82,16 +83,27 @@ public final class RealityNpcsMod {
     private static void cancelGuideInteraction(
             PlayerInteractEvent event,
             Entity target) {
-        if (event.getLevel().isClientSide || !NpcManager.isTrackedGuide(target)) {
+        if (event.getLevel().isClientSide) {
             return;
         }
-        event.setCanceled(true);
-        event.setCancellationResult(InteractionResult.CONSUME);
-        notifyGuideInteraction(event.getEntity(), target);
+        if (!(event.getEntity() instanceof ServerPlayer player)) {
+            return;
+        }
+        if (NpcGuideController.openGui(player, target)
+                || NpcManager.isTrackedGuideInAnyState(target)) {
+            event.setCanceled(true);
+            event.setCancellationResult(InteractionResult.CONSUME);
+            if (NpcManager.activeGuideForInteraction(target) == null) {
+                notifyGuideUnavailable(player);
+            }
+        }
+    }
+
+    private static void notifyGuideUnavailable(Player player) {
+        player.sendSystemMessage(Component.translatable("reality_npcs.guide.unavailable"));
     }
 
     private static void notifyGuideInteraction(Player player, Entity target) {
-        player.sendSystemMessage(Component.literal(
-                "Guide " + NpcManager.stableIdFor(target) + " is informational only; no trade, UI, reward, inventory, combat, or owner action is available."));
+        player.sendSystemMessage(Component.translatable("reality_npcs.guide.combat_blocked"));
     }
 }

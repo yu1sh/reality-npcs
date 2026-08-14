@@ -17,12 +17,13 @@ import net.minecraftforge.network.simple.SimpleChannel;
 final class NpcNetwork {
     private static final int MAX_STABLE_ID_LENGTH = 80;
     static final int MAX_DIMENSION_LENGTH = 128;
+    static final int MAX_GUIDE_TEXT_LENGTH = NpcManager.MAX_GUIDE_TEXT_LENGTH;
     private static final int MAX_ENTRIES = 64;
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(RealityNpcsMod.MOD_ID, "main"),
-            () -> "2",
-            "2"::equals,
-            "2"::equals);
+            () -> "3",
+            "3"::equals,
+            "3"::equals);
 
     private NpcNetwork() {
     }
@@ -42,6 +43,20 @@ final class NpcNetwork {
                 Snapshot::decode,
                 Snapshot::handle,
                 Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        CHANNEL.registerMessage(
+                2,
+                GuideTextRequest.class,
+                GuideTextRequest::encode,
+                GuideTextRequest::decode,
+                GuideTextRequest::handle,
+                Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        CHANNEL.registerMessage(
+                3,
+                GuideSnapshotPacket.class,
+                GuideSnapshotPacket::encode,
+                GuideSnapshotPacket::decode,
+                GuideSnapshotPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
     }
 
     static void sendToServer(Request request) {
@@ -50,6 +65,14 @@ final class NpcNetwork {
 
     static void sendSnapshot(ServerPlayer player, NpcAdminSnapshot snapshot) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new Snapshot(snapshot));
+    }
+
+    static void sendGuideTextToServer(GuideTextRequest request) {
+        CHANNEL.sendToServer(request);
+    }
+
+    static void sendGuideSnapshot(ServerPlayer player, NpcGuideSnapshot snapshot) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new GuideSnapshotPacket(snapshot));
     }
 
     static final class Request {
@@ -169,6 +192,7 @@ final class NpcNetwork {
                 buffer.writeInt(entry.anchorZ());
                 buffer.writeUtf(entry.entityUuid(), 64);
                 buffer.writeBoolean(entry.entityPresent());
+                buffer.writeUtf(entry.guideText(), MAX_GUIDE_TEXT_LENGTH);
             }
         }
 
@@ -189,7 +213,8 @@ final class NpcNetwork {
                         buffer.readInt(),
                         buffer.readInt(),
                         buffer.readUtf(64),
-                        buffer.readBoolean()));
+                        buffer.readBoolean(),
+                        buffer.readUtf(MAX_GUIDE_TEXT_LENGTH)));
             }
             return new Snapshot(new NpcAdminSnapshot(sessionId, revision, entries));
         }
@@ -203,6 +228,102 @@ final class NpcNetwork {
             context.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(
                     Dist.CLIENT,
                     () -> () -> NpcClient.receiveSnapshot(packet.snapshot)));
+            context.setPacketHandled(true);
+        }
+    }
+
+    static final class GuideTextRequest {
+        private final long sessionId;
+        private final long requestId;
+        private final long snapshotRevision;
+        private final String stableId;
+        private final String guideText;
+
+        GuideTextRequest(
+                long sessionId,
+                long requestId,
+                long snapshotRevision,
+                String stableId,
+                String guideText) {
+            this.sessionId = sessionId;
+            this.requestId = requestId;
+            this.snapshotRevision = snapshotRevision;
+            this.stableId = stableId == null ? "" : stableId;
+            this.guideText = guideText == null ? "" : guideText;
+        }
+
+        private static void encode(GuideTextRequest request, FriendlyByteBuf buffer) {
+            buffer.writeLong(request.sessionId);
+            buffer.writeLong(request.requestId);
+            buffer.writeLong(request.snapshotRevision);
+            buffer.writeUtf(request.stableId, MAX_STABLE_ID_LENGTH);
+            buffer.writeUtf(request.guideText, MAX_GUIDE_TEXT_LENGTH);
+        }
+
+        private static GuideTextRequest decode(FriendlyByteBuf buffer) {
+            return new GuideTextRequest(
+                    buffer.readLong(),
+                    buffer.readLong(),
+                    buffer.readLong(),
+                    buffer.readUtf(MAX_STABLE_ID_LENGTH),
+                    buffer.readUtf(MAX_GUIDE_TEXT_LENGTH));
+        }
+
+        private static void handle(
+                GuideTextRequest request,
+                Supplier<NetworkEvent.Context> contextSupplier) {
+            NetworkEvent.Context context = contextSupplier.get();
+            if (context.getDirection().getReceptionSide().isClient()) {
+                context.setPacketHandled(true);
+                return;
+            }
+            ServerPlayer sender = context.getSender();
+            context.enqueueWork(() -> {
+                if (sender != null) {
+                    NpcAdminController.handleGuideTextRequest(
+                            sender,
+                            request.sessionId,
+                            request.requestId,
+                            request.snapshotRevision,
+                            request.stableId,
+                            request.guideText);
+                }
+            });
+            context.setPacketHandled(true);
+        }
+    }
+
+    private static final class GuideSnapshotPacket {
+        private final NpcGuideSnapshot snapshot;
+
+        private GuideSnapshotPacket(NpcGuideSnapshot snapshot) {
+            this.snapshot = snapshot;
+        }
+
+        private static void encode(GuideSnapshotPacket packet, FriendlyByteBuf buffer) {
+            buffer.writeLong(packet.snapshot.sessionId());
+            buffer.writeComponent(packet.snapshot.title());
+            buffer.writeComponent(packet.snapshot.body());
+        }
+
+        private static GuideSnapshotPacket decode(FriendlyByteBuf buffer) {
+            return new GuideSnapshotPacket(new NpcGuideSnapshot(
+                    buffer.readLong(),
+                    buffer.readComponent(),
+                    buffer.readComponent()));
+        }
+
+        private static void handle(
+                GuideSnapshotPacket packet,
+                Supplier<NetworkEvent.Context> contextSupplier) {
+            NetworkEvent.Context context = contextSupplier.get();
+            if (!context.getDirection().getReceptionSide().isClient()) {
+                context.setPacketHandled(true);
+                return;
+            }
+            context.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(
+                    Dist.CLIENT,
+                    () -> () -> NpcClient.receiveGuideSnapshot(packet.snapshot)));
             context.setPacketHandled(true);
         }
     }

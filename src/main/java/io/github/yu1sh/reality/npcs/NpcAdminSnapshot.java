@@ -38,6 +38,7 @@ final class NpcAdminSnapshot {
             int anchorY,
             int anchorZ,
             String entityUuid,
-            boolean entityPresent) {
+            boolean entityPresent,
+            String guideText) {
     }
 }

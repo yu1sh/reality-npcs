@@ -23,10 +23,12 @@ final class NpcAdminScreen extends Screen implements MenuAccess<NpcAdminMenu> {
     private Button disableButton;
     private Button deleteButton;
     private Button recreateButton;
+    private Button setGuideTextButton;
     private EditBox dimensionInput;
     private EditBox xInput;
     private EditBox yInput;
     private EditBox zInput;
+    private EditBox guideTextInput;
 
     NpcAdminScreen(NpcAdminMenu menu, net.minecraft.world.entity.player.Inventory inventory, Component title) {
         super(title);
@@ -81,6 +83,20 @@ final class NpcAdminScreen extends Screen implements MenuAccess<NpcAdminMenu> {
                 .build());
 
         int detailLeft = split + 4;
+        guideTextInput = addRenderableWidget(new EditBox(
+                this.font,
+                detailLeft,
+                42,
+                Math.max(1, this.width - detailLeft - 8),
+                20,
+                Component.translatable("reality_npcs.admin.guide_text")));
+        guideTextInput.setMaxLength(NpcNetwork.MAX_GUIDE_TEXT_LENGTH);
+        guideTextInput.setHint(Component.translatable("reality_npcs.admin.guide_text_hint"));
+        setGuideTextButton = addRenderableWidget(Button.builder(
+                        Component.translatable("reality_npcs.admin.set_guide_text"),
+                        button -> requestGuideText())
+                .bounds(detailLeft, 66, 110, 20)
+                .build());
         disableButton = addRenderableWidget(Button.builder(
                         Component.literal("Disable"),
                         button -> requestSelected(NpcAdminOperation.DISABLE))
@@ -110,6 +126,12 @@ final class NpcAdminScreen extends Screen implements MenuAccess<NpcAdminMenu> {
         int split = Math.max(170, this.width / 2);
         graphics.drawCenteredString(this.font, this.title, this.width / 2, 6, 0xFFFFFF);
         drawString(graphics, "Coordinate spawn", listLeft, 34, 0xFFFFFF);
+        drawComponent(
+                graphics,
+                Component.translatable("reality_npcs.admin.guide_text"),
+                split + 4,
+                34,
+                0xFFFFFF);
         drawString(graphics, "Guide records", listLeft, LIST_TOP - 14, 0xFFFFFF);
         drawString(graphics, "Details", split + 4, LIST_TOP - 14, 0xFFFFFF);
         graphics.fill(listLeft, LIST_TOP, listRight, listBottom, 0x66000000);
@@ -165,6 +187,9 @@ final class NpcAdminScreen extends Screen implements MenuAccess<NpcAdminMenu> {
             int index = scrollOffset + row;
             if (index >= 0 && index < snapshot.entries().size()) {
                 selectedStableId = snapshot.entries().get(index).stableId();
+                if (guideTextInput != null) {
+                    guideTextInput.setValue(snapshot.entries().get(index).guideText());
+                }
                 updateActionButtons();
                 return true;
             }
@@ -190,6 +215,10 @@ final class NpcAdminScreen extends Screen implements MenuAccess<NpcAdminMenu> {
         menu.applySnapshot(nextSnapshot);
         if (selectedEntry() == null) {
             selectedStableId = null;
+        }
+        if (guideTextInput != null) {
+            NpcAdminSnapshot.Entry selected = selectedEntry();
+            guideTextInput.setValue(selected == null ? "" : selected.guideText());
         }
         int maxOffset = Math.max(0, snapshot.entries().size() - visibleRows());
         scrollOffset = Math.min(scrollOffset, maxOffset);
@@ -221,6 +250,9 @@ final class NpcAdminScreen extends Screen implements MenuAccess<NpcAdminMenu> {
         disableButton.active = hasSelection && selected.enabled();
         deleteButton.active = hasSelection;
         recreateButton.active = hasSelection;
+        if (setGuideTextButton != null) {
+            setGuideTextButton.active = hasSelection;
+        }
     }
 
     private void requestSelected(NpcAdminOperation operation) {
@@ -228,6 +260,19 @@ final class NpcAdminScreen extends Screen implements MenuAccess<NpcAdminMenu> {
         if (selected != null) {
             request(operation, selected.stableId());
         }
+    }
+
+    private void requestGuideText() {
+        NpcAdminSnapshot.Entry selected = selectedEntry();
+        if (selected == null || guideTextInput == null) {
+            return;
+        }
+        NpcNetwork.sendGuideTextToServer(new NpcNetwork.GuideTextRequest(
+                menu.sessionId(),
+                menu.nextRequestId(),
+                menu.snapshotRevision(),
+                selected.stableId(),
+                guideTextInput.getValue()));
     }
 
     private void request(NpcAdminOperation operation, String stableId) {
@@ -286,5 +331,14 @@ final class NpcAdminScreen extends Screen implements MenuAccess<NpcAdminMenu> {
 
     private void drawString(GuiGraphics graphics, String text, int x, int y, int color) {
         graphics.drawString(this.font, Component.literal(text), x, y, color);
+    }
+
+    private void drawComponent(
+            GuiGraphics graphics,
+            Component text,
+            int x,
+            int y,
+            int color) {
+        graphics.drawString(this.font, text, x, y, color);
     }
 }

@@ -47,8 +47,12 @@ final class GuideSavedData extends SavedData {
                         guideTag.getInt("anchor_y"),
                         guideTag.getInt("anchor_z"));
                 boolean enabled = guideTag.getBoolean("enabled");
+                String guideText = guideTag.getString("guide_text");
+                if (!NpcManager.isGuideTextValid(guideText)) {
+                    guideText = "";
+                }
                 data.guides.put(stableId, new GuideRecord(
-                        stableId, entityUuid, dimension, anchor, enabled));
+                        stableId, entityUuid, dimension, anchor, enabled, guideText));
             } catch (IllegalArgumentException ignored) {
                 // Ignore malformed records without preventing the world from loading.
             }
@@ -77,6 +81,7 @@ final class GuideSavedData extends SavedData {
             guideTag.putInt("anchor_y", guide.anchor().getY());
             guideTag.putInt("anchor_z", guide.anchor().getZ());
             guideTag.putBoolean("enabled", guide.enabled());
+            guideTag.putString("guide_text", guide.guideText());
             guideTags.add(guideTag);
         }
         tag.put(GUIDES_TAG, guideTags);
@@ -119,6 +124,7 @@ final class GuideSavedData extends SavedData {
         private final String dimension;
         private final BlockPos anchor;
         private boolean enabled;
+        private String guideText;
 
         GuideRecord(
                 String stableId,
@@ -126,11 +132,22 @@ final class GuideSavedData extends SavedData {
                 String dimension,
                 BlockPos anchor,
                 boolean enabled) {
+            this(stableId, entityUuid, dimension, anchor, enabled, "");
+        }
+
+        GuideRecord(
+                String stableId,
+                UUID entityUuid,
+                String dimension,
+                BlockPos anchor,
+                boolean enabled,
+                String guideText) {
             this.stableId = stableId;
             this.entityUuid = entityUuid;
             this.dimension = dimension;
             this.anchor = new BlockPos(anchor);
             this.enabled = enabled;
+            this.guideText = NpcManager.isGuideTextValid(guideText) ? guideText : "";
         }
 
         String stableId() {
@@ -159,6 +176,14 @@ final class GuideSavedData extends SavedData {
 
         void setEnabled(boolean enabled) {
             this.enabled = enabled;
+        }
+
+        String guideText() {
+            return guideText;
+        }
+
+        void setGuideText(String guideText) {
+            this.guideText = guideText;
         }
     }
 }

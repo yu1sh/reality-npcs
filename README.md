@@ -10,11 +10,13 @@ project Mod.
 - Java 17, Gradle 8.8, Forge 47.4.10, `mod_id=reality_npcs`, and package
   `io.github.yu1sh.reality.npcs`.
 - Every guide has a generated stable ID, entity UUID, dimension, fixed spawn
-  anchor, and enabled state in the `reality_npcs` world `SavedData`.
+  anchor, enabled state, and optional bounded guide text in the `reality_npcs`
+  world `SavedData`.
 - A guide is a vanilla Villager configured as a non-combat, no-AI guide. Its
-  trade offers are empty, player interaction is cancelled with a chat notice,
-  and it has no player-facing custom UI, reward, inventory, combat, or owner
-  permission. The operator administrator GUI is described below.
+  trade offers are empty, and an active guide right-click opens a
+  server-provided read-only information GUI. It has no reward, inventory,
+  combat, or owner permission. The operator administrator GUI can set short
+  plain-text guide content; blank content uses a safe translated default.
 - Server enforcement runs every 20 ticks. A guide outside 16 blocks from its
   saved anchor is returned to the nearest safe supported position within that
   radius. Dimension travel is cancelled.
@@ -83,6 +85,7 @@ equivalent operations:
 | `disable <stable-id>` | Disable selected record | Server-resolved stable ID, current record state, permission, session/request identity, revision, dimension/entity lookup, persistence, audit |
 | `delete <stable-id>` | Delete selected record | Server-resolved stable ID, permission, session/request identity, revision, dimension/entity lookup, persistence, audit |
 | `recreate <stable-id>` | Recreate selected record | Server-resolved stable ID, current record state, permission, session/request identity, revision, caps, dimension/entity lookup, safe position, persistence, audit |
+| (no command) | Set guide text | Server-resolved stable ID, permission level 2+, session/request identity, revision, bounded plain-text input, persistence, audit |
 
 GUI request packets do not carry an authoritative actor, position,
 world/dimension, NPC state, or operation proof. The server obtains the actor
@@ -95,6 +98,13 @@ requests are rejected and audited, while requests for another menu session are
 ignored. The client revision is only a stale-snapshot hint; before any NPC state
 mutation, the server requires it to match the current SavedData revision.
 Commands remain available as the management and automation fallback.
+
+An active guide interaction is accepted only when the server matches the
+current entity UUID and dimension to an enabled persisted record. The public
+guide menu contains only the server snapshot title and body; it has no request
+path or slots and does not expose coordinates, hosts, filesystem paths,
+secrets, or private player information. A client cannot choose the guide ID,
+content, or permission used for the interaction.
 
 ## Build and validation
 

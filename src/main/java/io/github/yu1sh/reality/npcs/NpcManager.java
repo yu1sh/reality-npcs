@@ -41,6 +41,7 @@ final class NpcManager {
     static final int SPAWN_ATTEMPT_INTERVAL_TICKS = 30 * 20;
     static final int AI_UPDATE_INTERVAL_TICKS = 20;
     static final int MAX_DIMENSION_LENGTH = 128;
+    static final int MAX_GUIDE_TEXT_LENGTH = 280;
     static final double ANCHOR_RADIUS = 16.0D;
     private static final double ANCHOR_RADIUS_SQUARED = ANCHOR_RADIUS * ANCHOR_RADIUS;
     private static final Pattern STABLE_ID = Pattern.compile(
@@ -155,14 +156,23 @@ final class NpcManager {
     }
 
     static boolean isTrackedGuide(Entity entity) {
-        if (!(entity.level() instanceof ServerLevel level)) {
-            return false;
+        return activeGuideForInteraction(entity) != null;
+    }
+
+    static GuideSavedData.GuideRecord activeGuideForInteraction(Entity entity) {
+        if (!(entity instanceof Villager)
+                || !(entity.level() instanceof ServerLevel level)) {
+            return null;
         }
         GuideSavedData data = GuideSavedData.forServer(level.getServer());
         GuideSavedData.GuideRecord guide = findByEntityUuid(data, entity.getUUID());
-        return guide != null
-                && guide.enabled()
-                && guide.dimension().equals(level.dimension().location().toString());
+        if (guide == null
+                || !guide.enabled()
+                || !guide.dimension().equals(level.dimension().location().toString())) {
+            return null;
+        }
+        Entity currentEntity = level.getEntity(guide.entityUuid());
+        return currentEntity == entity ? guide : null;
     }
 
     static boolean isTrackedGuideInAnyState(Entity entity) {
@@ -198,9 +208,48 @@ final class NpcManager {
                     guide.anchor().getY(),
                     guide.anchor().getZ(),
                     guide.entityUuid().toString(),
-                    entityPresent));
+                    entityPresent,
+                    guide.guideText()));
         }
         return new NpcAdminSnapshot(sessionId, data.revision(), entries);
+    }
+
+    static OperationResult setGuideText(
+            GuideSavedData data,
+            String stableId,
+            String requestedText,
+            String successReason,
+            String missingDimension) {
+        String dimension = missingDimension;
+        if (!isStableId(stableId)) {
+            return rejected(stableId, dimension, "stable_id_invalid");
+        }
+        String inputReason = guideTextInputReason(requestedText);
+        if (inputReason != null) {
+            return rejected(stableId, dimension, inputReason);
+        }
+
+        GuideSavedData.GuideRecord guide = data.get(stableId);
+        if (guide == null) {
+            return rejected(stableId, dimension, "stable_id_missing");
+        }
+        dimension = guide.dimension();
+        String guideText = normalizeGuideText(requestedText);
+        if (guide.guideText().equals(guideText)) {
+            return succeeded(
+                    stableId,
+                    dimension,
+                    "guide_text_unchanged",
+                    "guide_text_unchanged id=" + stableId);
+        }
+
+        guide.setGuideText(guideText);
+        data.changed();
+        return succeeded(
+                stableId,
+                dimension,
+                successReason,
+                "guide_text_saved id=" + stableId);
     }
 
     private static int spawnForPlayer(CommandContext<CommandSourceStack> context) {
@@ -502,6 +551,33 @@ final class NpcManager {
 
     static OperationResult rejected(String stableId, String dimension, String reason) {
         return new OperationResult(false, stableId, dimension, reason, "");
+    }
+
+    static String guideTextInputReason(String value) {
+        if (value == null) {
+            return "guide_text_invalid";
+        }
+        if (value.length() > MAX_GUIDE_TEXT_LENGTH
+                || value.codePointCount(0, value.length()) > MAX_GUIDE_TEXT_LENGTH) {
+            return "guide_text_too_long";
+        }
+        for (int index = 0; index < value.length();) {
+            int codePoint = value.codePointAt(index);
+            if (Character.isISOControl(codePoint)
+                    || Character.getType(codePoint) == Character.FORMAT) {
+                return "guide_text_plain_text_required";
+            }
+            index += Character.charCount(codePoint);
+        }
+        return null;
+    }
+
+    static boolean isGuideTextValid(String value) {
+        return guideTextInputReason(value) == null;
+    }
+
+    private static String normalizeGuideText(String value) {
+        return value.isBlank() ? "" : value;
     }
 
     record OperationResult(

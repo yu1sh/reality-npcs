@@ -16,6 +16,10 @@ final class NpcMenus {
             "npc_admin",
             () -> IForgeMenuType.create((windowId, inventory, data) ->
                     new NpcAdminMenu(windowId, inventory, data.readLong())));
+    static final RegistryObject<MenuType<NpcGuideMenu>> NPC_GUIDE = MENUS.register(
+            "npc_guide",
+            () -> IForgeMenuType.create((windowId, inventory, data) ->
+                    new NpcGuideMenu(windowId, inventory, data.readLong())));
 
     private NpcMenus() {
     }

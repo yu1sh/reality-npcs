@@ -17,12 +17,22 @@ public final class NpcClient {
 
     @SubscribeEvent
     public static void registerScreens(FMLClientSetupEvent event) {
-        event.enqueueWork(() -> MenuScreens.register(NpcMenus.NPC_ADMIN.get(), NpcAdminScreen::new));
+        event.enqueueWork(() -> {
+            MenuScreens.register(NpcMenus.NPC_ADMIN.get(), NpcAdminScreen::new);
+            MenuScreens.register(NpcMenus.NPC_GUIDE.get(), NpcGuideScreen::new);
+        });
     }
 
     public static void receiveSnapshot(NpcAdminSnapshot snapshot) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.screen instanceof NpcAdminScreen screen) {
+            screen.applySnapshot(snapshot);
+        }
+    }
+
+    public static void receiveGuideSnapshot(NpcGuideSnapshot snapshot) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.screen instanceof NpcGuideScreen screen) {
             screen.applySnapshot(snapshot);
         }
     }
