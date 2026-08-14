@@ -3,6 +3,7 @@ package io.github.yu1sh.reality.npcs;
 import java.util.List;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.MenuAccess;
 import net.minecraft.network.chat.Component;
@@ -10,7 +11,7 @@ import net.minecraft.network.chat.Component;
 /** Minimal client presentation for a server-produced administrator snapshot. */
 final class NpcAdminScreen extends Screen implements MenuAccess<NpcAdminMenu> {
     private static final int ROW_HEIGHT = 32;
-    private static final int LIST_TOP = 44;
+    private static final int LIST_TOP = 124;
     private static final int LIST_BOTTOM_MARGIN = 48;
     private final NpcAdminMenu menu;
     private NpcAdminSnapshot snapshot;
@@ -22,6 +23,10 @@ final class NpcAdminScreen extends Screen implements MenuAccess<NpcAdminMenu> {
     private Button disableButton;
     private Button deleteButton;
     private Button recreateButton;
+    private EditBox dimensionInput;
+    private EditBox xInput;
+    private EditBox yInput;
+    private EditBox zInput;
 
     NpcAdminScreen(NpcAdminMenu menu, net.minecraft.world.entity.player.Inventory inventory, Component title) {
         super(title);
@@ -50,6 +55,29 @@ final class NpcAdminScreen extends Screen implements MenuAccess<NpcAdminMenu> {
                         Component.literal("Refresh"),
                         button -> request(NpcAdminOperation.REFRESH, ""))
                 .bounds(listLeft + 98, 18, 70, 20)
+                .build());
+
+        dimensionInput = addRenderableWidget(new EditBox(
+                this.font,
+                listLeft,
+                42,
+                Math.max(1, this.width - 16),
+                20,
+                Component.literal("Dimension")));
+        dimensionInput.setMaxLength(NpcNetwork.MAX_DIMENSION_LENGTH);
+        dimensionInput.setHint(Component.literal("dimension resource location"));
+
+        int coordinateWidth = Math.max(30, Math.min(54, (this.width - 156) / 3));
+        int coordinateY = 66;
+        xInput = coordinateInput("x", listLeft, coordinateY, coordinateWidth);
+        yInput = coordinateInput("y", listLeft + coordinateWidth + 4, coordinateY, coordinateWidth);
+        zInput = coordinateInput("z", listLeft + (coordinateWidth + 4) * 2, coordinateY, coordinateWidth);
+        int coordinateButtonX = listLeft + (coordinateWidth + 4) * 3;
+        int coordinateButtonWidth = Math.max(1, this.width - coordinateButtonX - 8);
+        addRenderableWidget(Button.builder(
+                        Component.literal("Spawn at coordinates"),
+                        button -> requestCoordinateSpawn())
+                .bounds(coordinateButtonX, coordinateY, coordinateButtonWidth, 20)
                 .build());
 
         int detailLeft = split + 4;
@@ -81,8 +109,9 @@ final class NpcAdminScreen extends Screen implements MenuAccess<NpcAdminMenu> {
         renderBackground(graphics);
         int split = Math.max(170, this.width / 2);
         graphics.drawCenteredString(this.font, this.title, this.width / 2, 6, 0xFFFFFF);
-        drawString(graphics, "Guide records", listLeft, 34, 0xFFFFFF);
-        drawString(graphics, "Details", split + 4, 34, 0xFFFFFF);
+        drawString(graphics, "Coordinate spawn", listLeft, 34, 0xFFFFFF);
+        drawString(graphics, "Guide records", listLeft, LIST_TOP - 14, 0xFFFFFF);
+        drawString(graphics, "Details", split + 4, LIST_TOP - 14, 0xFFFFFF);
         graphics.fill(listLeft, LIST_TOP, listRight, listBottom, 0x66000000);
         graphics.fill(split + 2, LIST_TOP, this.width - 8, listBottom, 0x66000000);
 
@@ -202,12 +231,57 @@ final class NpcAdminScreen extends Screen implements MenuAccess<NpcAdminMenu> {
     }
 
     private void request(NpcAdminOperation operation, String stableId) {
+        request(operation, stableId, "", 0, 0, 0);
+    }
+
+    private void requestCoordinateSpawn() {
+        try {
+            request(
+                    NpcAdminOperation.SPAWN_AT_COORDINATES,
+                    "",
+                    dimensionInput.getValue(),
+                    Integer.parseInt(xInput.getValue().trim()),
+                    Integer.parseInt(yInput.getValue().trim()),
+                    Integer.parseInt(zInput.getValue().trim()));
+        } catch (NumberFormatException exception) {
+            if (this.minecraft != null && this.minecraft.player != null) {
+                this.minecraft.player.displayClientMessage(
+                        Component.literal("x, y, and z must be integers"),
+                        true);
+            }
+        }
+    }
+
+    private void request(
+            NpcAdminOperation operation,
+            String stableId,
+            String dimension,
+            int x,
+            int y,
+            int z) {
         NpcNetwork.sendToServer(new NpcNetwork.Request(
                 menu.sessionId(),
                 menu.nextRequestId(),
                 menu.snapshotRevision(),
                 operation,
-                stableId));
+                stableId,
+                dimension,
+                x,
+                y,
+                z));
+    }
+
+    private EditBox coordinateInput(String hint, int x, int y, int width) {
+        EditBox input = addRenderableWidget(new EditBox(
+                this.font,
+                x,
+                y,
+                width,
+                20,
+                Component.literal(hint)));
+        input.setMaxLength(12);
+        input.setHint(Component.literal(hint));
+        return input;
     }
 
     private void drawString(GuiGraphics graphics, String text, int x, int y, int color) {

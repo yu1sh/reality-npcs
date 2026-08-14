@@ -40,6 +40,7 @@ final class NpcManager {
     static final int WORLD_DIMENSION_CAP = 16;
     static final int SPAWN_ATTEMPT_INTERVAL_TICKS = 30 * 20;
     static final int AI_UPDATE_INTERVAL_TICKS = 20;
+    static final int MAX_DIMENSION_LENGTH = 128;
     static final double ANCHOR_RADIUS = 16.0D;
     private static final double ANCHOR_RADIUS_SQUARED = ANCHOR_RADIUS * ANCHOR_RADIUS;
     private static final Pattern STABLE_ID = Pattern.compile(
@@ -231,22 +232,15 @@ final class NpcManager {
             return reject(context, "spawn", null, dimension, "console_coordinates_only");
         }
 
-        ResourceKey<Level> levelKey = ResourceKey.create(Registries.DIMENSION, dimensionId);
-        ServerLevel level = context.getSource().getServer().getLevel(levelKey);
-        if (level == null) {
-            return reject(context, "spawn", null, dimension, "dimension_missing");
-        }
-
-        BlockPos anchor = new BlockPos(
+        MinecraftServer server = context.getSource().getServer();
+        GuideSavedData data = GuideSavedData.forServer(server);
+        OperationResult result = spawnAtCoordinates(
+                server,
+                data,
+                dimension,
                 IntegerArgumentType.getInteger(context, "x"),
                 IntegerArgumentType.getInteger(context, "y"),
-                IntegerArgumentType.getInteger(context, "z"));
-        GuideSavedData data = GuideSavedData.forServer(context.getSource().getServer());
-        OperationResult result = spawn(
-                context.getSource().getServer(),
-                data,
-                level,
-                anchor,
+                IntegerArgumentType.getInteger(context, "z"),
                 "console_coordinates");
         return complete(context, "spawn", result);
     }
@@ -289,6 +283,35 @@ final class NpcManager {
                 dimension,
                 reason,
                 "guide_spawned id=" + stableId + " dimension=" + dimension);
+    }
+
+    static OperationResult spawnAtCoordinates(
+            MinecraftServer server,
+            GuideSavedData data,
+            String requestedDimension,
+            int x,
+            int y,
+            int z,
+            String reason) {
+        if (requestedDimension == null
+                || requestedDimension.isEmpty()
+                || requestedDimension.length() > MAX_DIMENSION_LENGTH) {
+            return rejected(null, "unknown", "dimension_invalid");
+        }
+
+        ResourceLocation dimensionId = ResourceLocation.tryParse(requestedDimension);
+        if (dimensionId == null) {
+            return rejected(null, requestedDimension, "dimension_invalid");
+        }
+
+        String dimension = dimensionId.toString();
+        ResourceKey<Level> levelKey = ResourceKey.create(Registries.DIMENSION, dimensionId);
+        ServerLevel level = server.getLevel(levelKey);
+        if (level == null) {
+            return rejected(null, dimension, "dimension_missing");
+        }
+
+        return spawn(server, data, level, new BlockPos(x, y, z), reason);
     }
 
     private static int list(CommandContext<CommandSourceStack> context) {

@@ -70,13 +70,15 @@ movement is performed.
 permission-level-2+ operator player. The menu receives an authoritative
 snapshot containing every persisted guide's stable ID, enabled state, dimension,
 anchor, entity UUID, entity presence, and current SavedData revision. The client
-presents list/detail controls for Spawn guide and Refresh, plus Disable, Delete,
-and Recreate for a selected record. It provides the following equivalent
-operations:
+presents list/detail controls for Spawn guide, Spawn at coordinates, and Refresh,
+and Recreate for a selected record. Spawn at coordinates accepts a dimension
+resource location and integer x/y/z fields. It provides the following
+equivalent operations:
 
 | Existing command | GUI list/detail operation | Server validation path |
 | --- | --- | --- |
 | `spawn guide` | Spawn guide | Current server player position/dimension, permission, session/request identity, revision, caps, rate limit, safe position, entity add, persistence, audit |
+| `spawn guide <dimension> <x> <y> <z>` | Spawn at coordinates | Server-validated dimension resource location and integer coordinates, permission, session/request identity, revision, dimension existence, coordinate bounds, caps, rate limit, safe position, entity add, persistence, audit |
 | `list` | Snapshot / Refresh | Current server SavedData, permission, audit; no client-owned list state |
 | `disable <stable-id>` | Disable selected record | Server-resolved stable ID, current record state, permission, session/request identity, revision, dimension/entity lookup, persistence, audit |
 | `delete <stable-id>` | Delete selected record | Server-resolved stable ID, permission, session/request identity, revision, dimension/entity lookup, persistence, audit |

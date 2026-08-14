@@ -16,12 +16,13 @@ import net.minecraftforge.network.simple.SimpleChannel;
 /** Network adapter for the server-owned administrator menu contract. */
 final class NpcNetwork {
     private static final int MAX_STABLE_ID_LENGTH = 80;
+    static final int MAX_DIMENSION_LENGTH = 128;
     private static final int MAX_ENTRIES = 64;
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(RealityNpcsMod.MOD_ID, "main"),
-            () -> "1",
-            "1"::equals,
-            "1"::equals);
+            () -> "2",
+            "2"::equals,
+            "2"::equals);
 
     private NpcNetwork() {
     }
@@ -57,6 +58,10 @@ final class NpcNetwork {
         private final long snapshotRevision;
         private final NpcAdminOperation operation;
         private final String stableId;
+        private final String dimension;
+        private final int x;
+        private final int y;
+        private final int z;
 
         Request(
                 long sessionId,
@@ -64,11 +69,28 @@ final class NpcNetwork {
                 long snapshotRevision,
                 NpcAdminOperation operation,
                 String stableId) {
+            this(sessionId, requestId, snapshotRevision, operation, stableId, "", 0, 0, 0);
+        }
+
+        Request(
+                long sessionId,
+                long requestId,
+                long snapshotRevision,
+                NpcAdminOperation operation,
+                String stableId,
+                String dimension,
+                int x,
+                int y,
+                int z) {
             this.sessionId = sessionId;
             this.requestId = requestId;
             this.snapshotRevision = snapshotRevision;
             this.operation = operation;
             this.stableId = stableId == null ? "" : stableId;
+            this.dimension = dimension == null ? "" : dimension;
+            this.x = x;
+            this.y = y;
+            this.z = z;
         }
 
         private static void encode(Request request, FriendlyByteBuf buffer) {
@@ -77,6 +99,10 @@ final class NpcNetwork {
             buffer.writeLong(request.snapshotRevision);
             buffer.writeByte(request.operation == null ? -1 : request.operation.ordinal());
             buffer.writeUtf(request.stableId, MAX_STABLE_ID_LENGTH);
+            buffer.writeUtf(request.dimension, MAX_DIMENSION_LENGTH);
+            buffer.writeInt(request.x);
+            buffer.writeInt(request.y);
+            buffer.writeInt(request.z);
         }
 
         private static Request decode(FriendlyByteBuf buffer) {
@@ -89,7 +115,11 @@ final class NpcNetwork {
                     ? NpcAdminOperation.values()[operationOrdinal]
                     : null;
             String stableId = buffer.readUtf(MAX_STABLE_ID_LENGTH);
-            return new Request(sessionId, requestId, snapshotRevision, operation, stableId);
+            String dimension = buffer.readUtf(MAX_DIMENSION_LENGTH);
+            int x = buffer.readInt();
+            int y = buffer.readInt();
+            int z = buffer.readInt();
+            return new Request(sessionId, requestId, snapshotRevision, operation, stableId, dimension, x, y, z);
         }
 
         private static void handle(Request request, Supplier<NetworkEvent.Context> contextSupplier) {
@@ -107,7 +137,11 @@ final class NpcNetwork {
                             request.requestId,
                             request.snapshotRevision,
                             request.operation,
-                            request.stableId);
+                            request.stableId,
+                            request.dimension,
+                            request.x,
+                            request.y,
+                            request.z);
                 }
             });
             context.setPacketHandled(true);

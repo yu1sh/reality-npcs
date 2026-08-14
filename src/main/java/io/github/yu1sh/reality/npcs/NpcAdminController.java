@@ -52,7 +52,11 @@ final class NpcAdminController {
             long requestId,
             long snapshotRevision,
             NpcAdminOperation operation,
-            String stableId) {
+            String stableId,
+            String dimensionInput,
+            int x,
+            int y,
+            int z) {
         if (!(player.containerMenu instanceof NpcAdminMenu menu)
                 || menu.sessionId() != sessionId) {
             return;
@@ -90,8 +94,13 @@ final class NpcAdminController {
 
         GuideSavedData data = GuideSavedData.forServer(server);
         String requestedStableId = stableId == null ? "" : stableId;
+        String requestedDimension = dimensionInput == null ? "" : dimensionInput;
         GuideSavedData.GuideRecord guide = data.get(requestedStableId);
-        String dimension = guide == null
+        String dimension = operation == NpcAdminOperation.SPAWN_AT_COORDINATES
+                ? requestedDimension.isEmpty()
+                        ? NpcManager.dimensionOf(player.serverLevel())
+                        : requestedDimension
+                : guide == null
                 ? NpcManager.dimensionOf(player.serverLevel())
                 : guide.dimension();
         if (!NpcManager.beginGuiMutation(player, action, requestedStableId, dimension)) {
@@ -123,6 +132,14 @@ final class NpcAdminController {
                     player.serverLevel(),
                     player.blockPosition(),
                     "gui_current_position");
+            case SPAWN_AT_COORDINATES -> result = NpcManager.spawnAtCoordinates(
+                    server,
+                    data,
+                    requestedDimension,
+                    x,
+                    y,
+                    z,
+                    "gui_coordinates");
             case DISABLE -> result = NpcManager.disable(
                     server, data, requestedStableId, "gui_disable", dimension);
             case DELETE -> result = NpcManager.delete(
@@ -170,7 +187,8 @@ final class NpcAdminController {
     }
 
     private static String invalidInputReason(NpcAdminOperation operation, String stableId) {
-        if (operation == NpcAdminOperation.SPAWN) {
+        if (operation == NpcAdminOperation.SPAWN
+                || operation == NpcAdminOperation.SPAWN_AT_COORDINATES) {
             return stableId.isEmpty() ? null : "stable_id_not_allowed_for_spawn";
         }
         return NpcManager.isStableId(stableId) ? null : "stable_id_invalid";
@@ -207,6 +225,7 @@ final class NpcAdminController {
             case DISABLE -> "disable";
             case DELETE -> "delete";
             case RECREATE -> "recreate";
+            case SPAWN_AT_COORDINATES -> "spawn";
         };
     }
 

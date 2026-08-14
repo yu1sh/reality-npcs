@@ -6,5 +6,6 @@ enum NpcAdminOperation {
     SPAWN,
     DISABLE,
     DELETE,
-    RECREATE
+    RECREATE,
+    SPAWN_AT_COORDINATES
 }
