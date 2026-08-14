@@ -13,16 +13,18 @@ project Mod.
   anchor, and enabled state in the `reality_npcs` world `SavedData`.
 - A guide is a vanilla Villager configured as a non-combat, no-AI guide. Its
   trade offers are empty, player interaction is cancelled with a chat notice,
-  and it has no custom UI, reward, inventory, combat, or owner permission.
+  and it has no player-facing custom UI, reward, inventory, combat, or owner
+  permission. The operator administrator GUI is described below.
 - Server enforcement runs every 20 ticks. A guide outside 16 blocks from its
   saved anchor is returned to the nearest safe supported position within that
   radius. Dimension travel is cancelled.
 - Active guides are limited to 32 per server and 16 per dimension. The limits
   are checked before every spawn or recreate and disabled records do not count
   as active guides.
-- Each accepted operator command attempt is rate-limited to one attempt per 30
-  seconds per player UUID or `console`. A failed spawn/recreate attempt also
-  consumes the interval. There is no override or emergency budget.
+- Each accepted operator mutation attempt from a command or the administrator
+  GUI is rate-limited to one attempt per 30 seconds per player UUID or
+  `console`. A failed spawn/recreate attempt from either path also consumes
+  the interval. There is no override or emergency budget.
 - Player operators must have vanilla permission level 2 or higher. The only
   non-player principal accepted is the server console; command blocks and
   other sources fail closed.
@@ -64,10 +66,12 @@ movement is performed.
 
 ## Command / GUI parity
 
-`/realitynpcs gui` opens the server-owned administrator menu for an operator
-player. The menu receives an authoritative snapshot containing every persisted
-guide's stable ID, enabled state, dimension, anchor, entity UUID, entity
-presence, and SavedData revision. It provides the following equivalent
+`/realitynpcs gui` opens the server-owned administrator menu for a
+permission-level-2+ operator player. The menu receives an authoritative
+snapshot containing every persisted guide's stable ID, enabled state, dimension,
+anchor, entity UUID, entity presence, and current SavedData revision. The client
+presents list/detail controls for Spawn guide and Refresh, plus Disable, Delete,
+and Recreate for a selected record. It provides the following equivalent
 operations:
 
 | Existing command | GUI list/detail operation | Server validation path |
@@ -78,13 +82,16 @@ operations:
 | `delete <stable-id>` | Delete selected record | Server-resolved stable ID, permission, session/request identity, revision, dimension/entity lookup, persistence, audit |
 | `recreate <stable-id>` | Recreate selected record | Server-resolved stable ID, current record state, permission, session/request identity, revision, caps, dimension/entity lookup, safe position, persistence, audit |
 
-GUI packets do not carry an authoritative actor, position, world/dimension,
-NPC state, or operation proof. The server obtains the actor from the network
-sender and resolves the current NPC record and player location before each
-operation. A server-issued menu session and strictly increasing request ID
-reject requests from another menu, duplicate/replayed requests, or
-out-of-order requests. The client revision is only a stale-snapshot hint; the
-server compares it with the current SavedData revision before any mutation.
+GUI request packets do not carry an authoritative actor, position,
+world/dimension, NPC state, or operation proof. The server obtains the actor
+from the network sender. Spawn uses the sender's current server level and block
+position, while selected-record operations re-resolve the current SavedData
+record and its stored dimension. A refresh rebuilds the snapshot from current
+server SavedData. Requests are accepted only for the server-issued menu session
+with a strictly increasing request ID; duplicate/replayed or out-of-order
+requests are rejected and audited, while requests for another menu session are
+ignored. The client revision is only a stale-snapshot hint; before any NPC state
+mutation, the server requires it to match the current SavedData revision.
 Commands remain available as the management and automation fallback.
 
 ## Build and validation
