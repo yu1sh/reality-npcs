@@ -1,6 +1,9 @@
 {
   "reality_npcs.guide.title": "Guide",
   "reality_npcs.guide.default_body": "This guide shows server-approved information. It does not change combat, travel, items, currency, permissions, claims, parties, shops, or server connections.",
+  "reality_npcs.guide.page": "Page %1$s/%2$s (lines %3$s-%4$s)",
+  "reality_npcs.guide.previous": "Previous",
+  "reality_npcs.guide.next": "Next",
   "reality_npcs.guide.close": "Close",
   "reality_npcs.guide.unavailable": "This guide is currently unavailable.",
   "reality_npcs.guide.combat_blocked": "This guide is informational only; combat is unavailable.",

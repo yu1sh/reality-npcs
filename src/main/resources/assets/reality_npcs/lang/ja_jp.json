@@ -1,6 +1,9 @@
 {
   "reality_npcs.guide.title": "案内",
   "reality_npcs.guide.default_body": "この案内NPCはサーバー承認済みの情報を表示します。戦闘、移動、アイテム、通貨、権限、クレーム、パーティー、ショップ、サーバー接続は変更しません。",
+  "reality_npcs.guide.page": "ページ %1$s/%2$s（%3$s〜%4$s行目を表示）",
+  "reality_npcs.guide.previous": "前へ",
+  "reality_npcs.guide.next": "次へ",
   "reality_npcs.guide.close": "閉じる",
   "reality_npcs.guide.unavailable": "この案内NPCは現在利用できません。",
   "reality_npcs.guide.combat_blocked": "この案内NPCは情報提供専用です。戦闘は利用できません。",

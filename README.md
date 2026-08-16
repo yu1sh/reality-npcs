@@ -103,8 +103,12 @@ An active guide interaction is accepted only when the server matches the
 current entity UUID and dimension to an enabled persisted record. The public
 guide menu contains only the server snapshot title and body; it has no request
 path or slots and does not expose coordinates, hosts, filesystem paths,
-secrets, or private player information. A client cannot choose the guide ID,
-content, or permission used for the interaction.
+secrets, or private player information. The client wraps the server-provided
+body to the current screen width and presents a fixed number of wrapped lines
+per page, with local Previous/Next and Close buttons. The page number and
+visible line range are shown; page state is presentation-only and is never sent
+back to the server. Empty and default bodies remain safe to display. A client
+cannot choose the guide ID, content, or permission used for the interaction.
 
 ## Build and validation
 
